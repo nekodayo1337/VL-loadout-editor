@@ -69,6 +69,8 @@ Keep the console window open while using the editor; press `Ctrl+C` there to clo
     again; it reopens the existing instance instead of starting a second one.
   - **Quit:** right-click the tray icon → **Quit**. (Closing the browser tab does *not* quit it.)
   - First launch shows a tray balloon telling you it's running in the tray.
+- **Startup time:** a fresh start (no instance already running) takes about **5 seconds** while it
+  loads your VALORANT data. Reopening an already-running instance is instant.
 - Changes are saved to Riot's servers immediately, but VALORANT only shows them the
   next time it loads your loadout (re-open the Collection, start a match, or restart
   the client).
@@ -157,6 +159,8 @@ Use of this software is done at your own risk.
     2個目を立ち上げず既存インスタンスのタブを開きます。
   - **終了：** トレイアイコンを右クリック →「**Quit**」。（タブを閉じただけでは終了しません）
   - 初回起動時に「トレイで動作中」のバルーン通知が出ます。
+- **起動時間：** 既存インスタンスが無い状態での起動は、データ取得のため **約5秒**かかります。
+  すでに起動中のインスタンスを開く場合は即座です。
 - 変更は Riot のサーバーに即保存されますが、VALORANT 側の表示は次にロードアウトを
   読み込んだとき（コレクションを開き直す / 試合に入る / クライアント再起動）に反映されます。
 - マップ/エージェントの自動適用は **VALORANT 起動中のみ**動作します（現在のマップ/エージェントは
