@@ -42,7 +42,16 @@ can auto-apply per map or per agent while you play.
 
 **The Riot Client must be open and logged in** (you do *not* need to launch VALORANT).
 
-### From source
+### Download (no Python needed)
+
+1. Download **`LoadoutEditor.exe`** from the [Releases](https://github.com/nekodayo1337/VL-loadout-editor/releases) page.
+2. Run it — the editor opens in your browser. **No Python install required** (the runtime is bundled).
+
+> Windows SmartScreen may warn about an "unknown publisher" (a common false positive for unsigned apps). Click **More info → Run anyway**.
+
+### Run from source
+
+Python **is** required for this method.
 
 1. Install [Python 3.8 or newer](https://www.python.org/downloads/) (add it to PATH).
 2. Run **`INSTALL.bat`** (or `pip install -r requirements.txt`).
@@ -113,7 +122,16 @@ Use of this software is done at your own risk.
 
 **Riot Client を起動してログインしておいてください**（VALORANT 本体の起動は不要）。
 
+### ダウンロードして使う（Python不要）
+
+1. [Releases](https://github.com/nekodayo1337/VL-loadout-editor/releases) ページから **`LoadoutEditor.exe`** をダウンロード。
+2. 実行するだけ — ブラウザでエディタが開きます。**Python のインストールは不要**です（ランタイム同梱）。
+
+> Windows SmartScreen が「不明な発行元」と警告する場合があります（未署名アプリでよくある誤検知）。**詳細情報 → 実行** で起動できます。
+
 ### ソースから実行
+
+こちらの方法では Python が**必要**です。
 
 1. [Python 3.8 以上](https://www.python.org/downloads/) をインストール（PATH に追加）。
 2. **`INSTALL.bat`** を実行（または `pip install -r requirements.txt`）。
