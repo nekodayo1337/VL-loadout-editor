@@ -3,6 +3,7 @@
 import json
 import os
 import socket
+import sys
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -63,6 +64,7 @@ class LoadoutGui:
         self._map_path_to_uuid = {}
         self._item_index = {}
         self._bundle_by_uuid = {}
+        self.port = None
         self.payload = None
 
     def _loadout_url(self):
@@ -716,19 +718,119 @@ class LoadoutGui:
 
         return {"ok": False, "status": 0, "error": "unknown type"}
 
-    def serve(self):
-        from rich.console import Console
+    def _port_file(self):
+        base = os.path.join(os.getenv("APPDATA") or os.path.expanduser("~"), "LoadoutEditor")
+        os.makedirs(base, exist_ok=True)
+        return os.path.join(base, ".port")
 
-        console = Console()
-        console.print()
-        console.print(ui.heading("Loadout Editor — GUI", "opening in your browser"))
+    def _write_port(self, port):
+        try:
+            with open(self._port_file(), "w") as f:
+                f.write(str(port))
+        except Exception:
+            pass
+
+    def _clear_port(self):
+        try:
+            os.remove(self._port_file())
+        except Exception:
+            pass
+
+    def _existing_instance_url(self):
+        try:
+            port = int(open(self._port_file()).read().strip())
+        except Exception:
+            return None
+        try:
+            r = requests.get(f"http://127.0.0.1:{port}/api/ping", timeout=1.5)
+            if r.ok and r.json().get("app") == "loadout-editor":
+                return f"http://127.0.0.1:{port}"
+        except Exception:
+            pass
+        return None
+
+    def _pick_port(self):
+        for candidate in range(9669, 9719):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(("127.0.0.1", candidate)) != 0:
+                    return candidate
+        return None
+
+    def _tray_image(self):
+        from PIL import Image, ImageDraw
+        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle((5, 5, 59, 59), radius=16, fill=(255, 70, 85, 255))
+        d.rectangle((28, 16, 36, 40), fill=(255, 255, 255, 255))
+        d.ellipse((26, 44, 38, 56), fill=(255, 255, 255, 255))
+        return img
+
+    def _run_tray(self, server, url, console):
+        try:
+            import pystray
+        except Exception:
+            if console:
+                ui.notice(console, "Press Ctrl+C here to quit.", "info")
+            try:
+                threading.Event().wait()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                self._clear_port()
+                server.shutdown()
+            return
+
+        def _open(icon=None, item=None):
+            webbrowser.open(url)
+
+        def _quit(icon=None, item=None):
+            self._clear_port()
+            try:
+                server.shutdown()
+            except Exception:
+                pass
+            icon.stop()
+            os._exit(0)
+
+        menu = pystray.Menu(
+            pystray.MenuItem("Open Loadout Editor", _open, default=True),
+            pystray.MenuItem("Quit", _quit),
+        )
+        icon = pystray.Icon("loadout_editor", self._tray_image(), "Loadout Editor", menu)
+
+        def _setup(ic):
+            ic.visible = True
+            try:
+                ic.notify("Running in the system tray. Double-click the icon (or run the app again) to reopen.", "Loadout Editor")
+            except Exception:
+                pass
+
+        icon.run(setup=_setup)
+        self._clear_port()
+
+    def serve(self):
+        existing = self._existing_instance_url()
+        if existing:
+            webbrowser.open(existing)
+            return
+
+        console = None
+        if getattr(sys, "stdout", None) is not None:
+            try:
+                from rich.console import Console
+                console = Console()
+                console.print()
+                console.print(ui.heading("Loadout Editor", "starting…"))
+            except Exception:
+                console = None
 
         try:
             self.build_data()
         except Exception as e:
             self.log(f"gui build_data failed: {e}")
-            ui.notice(console, "Could not load your loadout from Riot.", "warn")
-            ui.notice(console, "Make sure the Riot Client is running and logged in.", "info")
+            if console:
+                ui.notice(console, "Could not load your loadout from Riot.", "warn")
+                ui.notice(console, "Make sure the Riot Client is running and logged in.", "info")
             return
 
         gui = self
@@ -751,6 +853,8 @@ class LoadoutGui:
             def do_GET(self):
                 if self.path in ("/", "/index.html"):
                     self._send(200, PAGE, "text/html; charset=utf-8")
+                elif self.path == "/api/ping":
+                    self._send(200, json.dumps({"app": "loadout-editor", "version": gui.version}))
                 elif self.path == "/api/data":
                     self._send(200, json.dumps(gui.payload))
                 elif self.path == "/api/refresh":
@@ -785,28 +889,20 @@ class LoadoutGui:
                 else:
                     self._send(404, json.dumps({"ok": False}))
 
-        port = None
-        for candidate in range(9667, 9717):
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                if s.connect_ex(("127.0.0.1", candidate)) != 0:
-                    port = candidate
-                    break
+        port = self._pick_port()
         if port is None:
-            ui.notice(console, "No free local port found for the GUI.", "warn")
+            if console:
+                ui.notice(console, "No free local port found for the GUI.", "warn")
             return
-
+        self.port = port
         server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
         url = f"http://127.0.0.1:{port}"
-        ui.notice(console, f"GUI ready at {url}", "ok")
-        ui.notice(console, "Keep this window open. Press Ctrl+C here to close the editor.", "info")
+        self._write_port(port)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        if console:
+            ui.notice(console, f"Loadout Editor running at {url}", "ok")
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            server.shutdown()
-            ui.notice(console, "Loadout editor closed.", "info")
+        self._run_tray(server, url, console)
 
 
 PAGE = r"""<!DOCTYPE html>

@@ -13,15 +13,33 @@ from src.requestsV import Requests
 
 version = "alpha"
 
-if sys.platform == "win32":
-    os.system("")
+HAS_CONSOLE = sys.stdout is not None
+
+if sys.platform == "win32" and HAS_CONSOLE:
+    try:
+        os.system("")
+    except Exception:
+        pass
     for _stream in (sys.stdout, sys.stderr):
         try:
             _stream.reconfigure(encoding="utf-8")
         except Exception:
             pass
+    try:
+        os.system("title Loadout Editor")
+    except Exception:
+        pass
 
-os.system("title Loadout Editor")
+
+def notify(text):
+    if HAS_CONSOLE:
+        print(text)
+    elif sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, text, "Loadout Editor", 0x40)
+        except Exception:
+            pass
 
 
 class _NoLaunch:
@@ -37,7 +55,7 @@ def make_requests(log):
         os.getenv("LOCALAPPDATA"), R"Riot Games\Riot Client\Config\lockfile"
     )
     if not os.path.exists(lockfile):
-        print(
+        notify(
             "Riot Client is not running. Please open the Riot Client and log in "
             "(you do NOT need to launch VALORANT itself), then run this again."
         )
@@ -50,7 +68,8 @@ def main():
     try:
         req = make_requests(log)
         if req is None:
-            input("press enter to exit...\n")
+            if HAS_CONSOLE:
+                input("press enter to exit...\n")
             return
         from src.loadout_gui import LoadoutGui
         LoadoutGui(log, req, version).serve()
@@ -58,8 +77,9 @@ def main():
         pass
     except Exception:
         log(traceback.format_exc())
-        print("The Loadout Editor encountered an error. See the logs folder.")
-        input("press enter to exit...\n")
+        notify("The Loadout Editor encountered an error. See the logs folder.")
+        if HAS_CONSOLE:
+            input("press enter to exit...\n")
 
 
 if __name__ == "__main__":
