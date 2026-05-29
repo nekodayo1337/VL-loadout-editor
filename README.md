@@ -57,6 +57,8 @@ Keep the console window open while using the editor; press `Ctrl+C` there to clo
   the client).
 - The Map/Agent auto-override only works **while VALORANT is running**, because the
   current map/agent only exist during agent select / a match.
+- Loadout presets are stored in `%APPDATA%\LoadoutEditor\presets.json` — back up or
+  share that file to move your presets.
 - Skin/spray/etc. images come from [valorant-api.com](https://valorant-api.com/).
 
 ## Disclaimer
@@ -125,6 +127,8 @@ Use of this software is done at your own risk.
   読み込んだとき（コレクションを開き直す / 試合に入る / クライアント再起動）に反映されます。
 - マップ/エージェントの自動適用は **VALORANT 起動中のみ**動作します（現在のマップ/エージェントは
   エージェントセレクトや試合中にしか存在しないため）。
+- プリセットは `%APPDATA%\LoadoutEditor\presets.json` に保存されます（バックアップや
+  別PCへの移動は、このファイルをコピーするだけです）。
 - スキンやスプレー等の画像は [valorant-api.com](https://valorant-api.com/) から取得しています。
 
 ## 免責事項

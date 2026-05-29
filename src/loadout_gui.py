@@ -1,6 +1,7 @@
 """Browser-based Loadout Editor: a local HTTP server serving a single-page app."""
 
 import json
+import os
 import socket
 import threading
 import webbrowser
@@ -27,9 +28,9 @@ EXPR_TYPE_SPRAY = ITEMTYPE["spray"]
 EXPR_TYPE_FLEX = ITEMTYPE["flex"]
 
 CURRENCY = {
-    "vp": "85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741",  # VALORANT Points
-    "rp": "e59aa87c-4cbf-517a-5983-6e81511be9b7",  # Radianite Points
-    "kc": "85ca954a-41f2-ce94-9b45-8ca3dd39a00d",  # Kingdom Credits
+    "vp": "85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741",
+    "rp": "e59aa87c-4cbf-517a-5983-6e81511be9b7",
+    "kc": "85ca954a-41f2-ce94-9b45-8ca3dd39a00d",
 }
 
 VALAPI = "https://valorant-api.com/v1/"
@@ -42,7 +43,6 @@ CATEGORY_LABELS = {
 
 
 def _hexcolor(c):
-    """valorant-api highlightColor is RGBA hex (e.g. 'f1b82dff') -> '#f1b82d'."""
     if not c:
         return None
     c = str(c).strip().lstrip("#")
@@ -59,8 +59,8 @@ class LoadoutGui:
         self.level_to_skin = {}
         self.buddy_by_uuid = {}
         self._map_path_to_uuid = {}
-        self._item_index = {}      # any cosmetic ItemID -> {name, icon}
-        self._bundle_by_uuid = {}  # bundle DataAssetID -> {name, icon}
+        self._item_index = {}
+        self._bundle_by_uuid = {}
         self.payload = None
 
     def _loadout_url(self):
@@ -80,7 +80,6 @@ class LoadoutGui:
             return set()
 
     def _entitlements_full(self, item_type):
-        """Full entitlement objects (ItemID + InstanceID) — needed for buddies."""
         url = f"{self.req.pd_url}/store/v1/entitlements/{self.req.puuid}/{item_type}"
         r = requests.get(url, headers=self.req.get_headers(), verify=False, timeout=10)
         r.raise_for_status()
@@ -193,7 +192,6 @@ class LoadoutGui:
         return self.payload
 
     def _gamestate(self):
-        """Detect current match map/agent (needs the game running)."""
         glz = self.req.glz_url
         puuid = self.req.puuid
         h = self.req.get_headers()
@@ -226,7 +224,6 @@ class LoadoutGui:
         return {"state": "MENUS", "map": None, "agent": None}
 
     def apply_preset(self, preset):
-        """Apply a saved full-loadout preset (PUT), keeping the live Subject/Version."""
         if not isinstance(preset, dict):
             return {"ok": False, "error": "bad preset"}
         try:
@@ -242,8 +239,37 @@ class LoadoutGui:
             self.loadout = new
         return self._apply(m)
 
+    def _presets_path(self):
+        base = os.path.join(os.getenv("APPDATA") or os.path.expanduser("~"), "LoadoutEditor")
+        os.makedirs(base, exist_ok=True)
+        return os.path.join(base, "presets.json")
+
+    def load_presets(self):
+        try:
+            with open(self._presets_path(), encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                data = {}
+        except Exception:
+            data = {}
+        data.setdefault("presets", [])
+        data.setdefault("override", "off")
+        return data
+
+    def save_presets(self, data):
+        if not isinstance(data, dict):
+            return {"ok": False, "error": "bad data"}
+        out = {"presets": data.get("presets", []), "override": data.get("override", "off")}
+        try:
+            with open(self._presets_path(), "w", encoding="utf-8") as f:
+                json.dump(out, f, indent=2)
+            return {"ok": True}
+        except Exception as e:
+            self.log(f"save_presets failed: {e}")
+            return {"ok": False, "error": str(e)}
+
     def _build_item_index(self, sprays, buddies, cards, titles, flex):
-        idx = dict(self.level_to_skin)  # skin level uuid -> {name, icon, ...}
+        idx = dict(self.level_to_skin)
         for s in sprays:
             idx[s["uuid"].lower()] = {"name": s["displayName"],
                                       "icon": s.get("displayIcon") or s.get("fullTransparentIcon")}
@@ -360,7 +386,6 @@ class LoadoutGui:
         }
 
     def _build_buddies(self, buddies_meta):
-        """Owned gun buddies, deduped by buddy with one owned InstanceID each."""
         by_level = {}
         for b in buddies_meta:
             for lv in (b.get("levels") or []):
@@ -373,7 +398,7 @@ class LoadoutGui:
         except Exception as e:
             self.log(f"buddy entitlement fetch failed: {e}")
             ents = []
-        owned = {}  # buddy uuid -> {info + instance}
+        owned = {}
         for e in ents:
             info = by_level.get((e.get("ItemID") or "").lower())
             inst = e.get("InstanceID")
@@ -420,7 +445,6 @@ class LoadoutGui:
             return set()
 
     def _build_expressions(self, sprays_meta, flex_meta):
-        """The v3 4-slot ActiveExpressions wheel (sprays + flex mixed)."""
         spray_by = {s["uuid"].lower(): s for s in sprays_meta}
         flex_by = {f["uuid"].lower(): f for f in flex_meta}
         active = self.loadout.get("ActiveExpressions") or []
@@ -587,9 +611,6 @@ class LoadoutGui:
         return {"items": items, "current": current}
 
     def _apply(self, mutate):
-        """Run a mutation on self.loadout, PUT, revert on failure. On success,
-        re-fetch from the server so Version stays current and we can confirm the
-        change actually persisted."""
         snapshot = json.loads(json.dumps(self.loadout))
         old_version = self.loadout.get("Version")
         mutate()
@@ -640,7 +661,7 @@ class LoadoutGui:
 
         if kind == "buddy":
             wid = (req.get("weapon") or "").lower()
-            buddy_id = req.get("buddyId")  # None/empty => remove buddy
+            buddy_id = req.get("buddyId")
 
             def m():
                 gun = self.gun_by_id.get(wid)
@@ -727,6 +748,8 @@ class LoadoutGui:
                     self._send(200, json.dumps(gui._gamestate()))
                 elif self.path == "/api/loadout-raw":
                     self._send(200, json.dumps(gui.loadout or {}))
+                elif self.path == "/api/presets":
+                    self._send(200, json.dumps(gui.load_presets()))
                 else:
                     self._send(204, b"")
 
@@ -741,6 +764,8 @@ class LoadoutGui:
                     self._send(200, json.dumps(gui.equip(req)))
                 elif self.path == "/api/apply-preset":
                     self._send(200, json.dumps(gui.apply_preset(req.get("loadout"))))
+                elif self.path == "/api/presets":
+                    self._send(200, json.dumps(gui.save_presets(req)))
                 else:
                     self._send(404, json.dumps({"ok": False}))
 
@@ -1067,7 +1092,8 @@ async function load(){
     const ab=document.querySelector('.wbtn.active'); if(ab) ab.scrollIntoView({block:'center'});
   }
   renderSprays(); renderFlex();
-  renderCards(); renderTitles(); renderWallet(); renderStore(); renderPresets();
+  renderCards(); renderTitles(); renderWallet(); renderStore();
+  await loadPresets(); renderPresets();
   setInterval(tickStore,1000);
   setInterval(checkAutoApply,6000);
   let savedT=null; try{savedT=localStorage.getItem('le_tab');}catch(e){}
@@ -1404,10 +1430,26 @@ function tickStore(){
   document.querySelectorAll('.bundle-timer').forEach(el=>{el.textContent=fmtDur((+el.dataset.end-Date.now())/1000);});
 }
 
-function getPresets(){try{return JSON.parse(localStorage.getItem('le_presets')||'[]');}catch(e){return [];}}
-function setPresets(a){try{localStorage.setItem('le_presets',JSON.stringify(a));}catch(e){}}
-function getOverride(){try{return localStorage.getItem('le_override')||'off';}catch(e){return 'off';}}
-function setOverride(m){try{localStorage.setItem('le_override',m);}catch(e){} lastAutoKey=null; renderPresets();}
+let PRESETS={presets:[],override:'off'};
+async function loadPresets(){
+  try{ PRESETS=await (await fetch('/api/presets')).json(); }catch(e){ PRESETS={presets:[],override:'off'}; }
+  if(!Array.isArray(PRESETS.presets)) PRESETS.presets=[];
+  if(!PRESETS.override) PRESETS.override='off';
+  try{
+    const old=JSON.parse(localStorage.getItem('le_presets')||'[]');
+    if(!PRESETS.presets.length && old.length){
+      PRESETS.presets=old; PRESETS.override=localStorage.getItem('le_override')||'off';
+      await savePresets();
+    }
+    localStorage.removeItem('le_presets'); localStorage.removeItem('le_override');
+  }catch(e){}
+}
+async function savePresets(){
+  try{ await fetch('/api/presets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(PRESETS)}); }catch(e){}
+}
+function getPresets(){ return PRESETS.presets; }
+function getOverride(){ return PRESETS.override; }
+function setOverride(m){ PRESETS.override=m; lastAutoKey=null; savePresets(); renderPresets(); }
 function renderPresets(){
   const wrap=document.getElementById('presets-wrap'); const ps=getPresets(); const ov=getOverride();
   const opt=(list,sel)=>['<option value="">—</option>'].concat((list||[]).map(x=>`<option value="${x.uuid}" ${x.uuid===sel?'selected':''}>${x.name}</option>`)).join('');
@@ -1438,12 +1480,12 @@ async function savePreset(){
   const nm=(document.getElementById('preset-name').value||'').trim()||('Preset '+(getPresets().length+1));
   try{
     const r=await fetch('/api/loadout-raw'); const lo=await r.json();
-    const ps=getPresets(); ps.push({id:'p'+Date.now(), name:nm, loadout:lo, map:'', agent:''});
-    setPresets(ps); renderPresets(); toast('Saved preset: '+nm,'ok');
+    getPresets().push({id:'p'+Date.now(), name:nm, loadout:lo, map:'', agent:''});
+    await savePresets(); renderPresets(); toast('Saved preset: '+nm,'ok');
   }catch(e){ toast('Save failed: '+e,'err'); }
 }
-function deletePreset(id){ setPresets(getPresets().filter(p=>p.id!==id)); renderPresets(); }
-function assignPreset(id,field,val){ const ps=getPresets(); const p=ps.find(x=>x.id===id); if(p){p[field]=val; setPresets(ps);} }
+function deletePreset(id){ PRESETS.presets=getPresets().filter(p=>p.id!==id); savePresets(); renderPresets(); }
+function assignPreset(id,field,val){ const p=getPresets().find(x=>x.id===id); if(p){p[field]=val; savePresets();} }
 async function applyPresetById(id){ const p=getPresets().find(x=>x.id===id); if(p) await applyPresetLoadout(p.loadout, p.name); }
 async function applyPresetLoadout(loadout, name){
   const res=await post2('/api/apply-preset',{loadout});
