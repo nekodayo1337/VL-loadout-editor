@@ -34,6 +34,7 @@ CURRENCY = {
 }
 
 VALAPI = "https://valorant-api.com/v1/"
+REPO = "nekodayo1337/VL-loadout-editor"
 
 CATEGORY_ORDER = ["Sidearm", "SMG", "Shotgun", "Rifle", "Sniper", "Heavy", "Melee"]
 CATEGORY_LABELS = {
@@ -50,9 +51,10 @@ def _hexcolor(c):
 
 
 class LoadoutGui:
-    def __init__(self, log, requests_client):
+    def __init__(self, log, requests_client, version="alpha"):
         self.log = log
         self.req = requests_client
+        self.version = version
         self.loadout = None
         self.gun_by_id = {}
         self.skin_by_id = {}
@@ -188,8 +190,22 @@ class LoadoutGui:
             "store": self._build_store(),
             "maps": maps_list,
             "agents": agents_list,
+            "update": self._check_update(),
         }
         return self.payload
+
+    def _check_update(self):
+        try:
+            r = requests.get(f"https://api.github.com/repos/{REPO}/releases/latest", timeout=8)
+            if r.ok:
+                j = r.json()
+                tag = j.get("tag_name") or ""
+                url = j.get("html_url") or f"https://github.com/{REPO}/releases"
+                avail = bool(tag) and tag.lstrip("v") != str(self.version).lstrip("v")
+                return {"available": avail, "latest": tag, "url": url}
+        except Exception as e:
+            self.log(f"update check failed: {e}")
+        return {"available": False}
 
     def _gamestate(self):
         glz = self.req.glz_url
@@ -838,6 +854,13 @@ PAGE = r"""<!DOCTYPE html>
     transition:all .15s var(--ease)}
   .refresh:hover{border-color:var(--accent);color:#fff;background:#241319;box-shadow:0 0 14px var(--accent-glow)}
   .refresh:disabled{opacity:.6;cursor:default}
+  .update{margin-left:14px;padding:6px 12px;border-radius:9px;border:1px solid var(--accent);
+    background:#241319;color:#fff;font-size:12px;font-weight:700;text-decoration:none;
+    box-shadow:0 0 12px var(--accent-glow)}
+  .update:hover{background:var(--accent)}
+  .lang{margin-left:12px;padding:8px 13px;border-radius:10px;border:1px solid var(--faint);
+    background:var(--panel);color:var(--ink);cursor:pointer;font-size:13px;font-weight:600}
+  .lang:hover{border-color:var(--accent)}
   .wallet{display:flex;gap:7px;align-items:center;margin-left:16px}
   .cur{font-size:12px;font-weight:700;padding:5px 10px;border-radius:8px;border:1px solid var(--faint);
     background:var(--panel);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -1021,8 +1044,10 @@ PAGE = r"""<!DOCTYPE html>
   <div class="bar"></div>
   <h1>VALORANT <span>Loadout Editor</span></h1>
   <div class="tabs" id="tabs"></div>
-  <div class="hint">1–5 tabs · / search · R random · <b style="color:#67ed4c">build - alpha</b></div>
+  <div class="hint" id="hint"></div>
   <div class="wallet" id="wallet"></div>
+  <a class="update" id="update" target="_blank" rel="noopener" style="display:none"></a>
+  <button class="lang" id="lang"></button>
   <button class="refresh" id="refresh" title="Re-fetch your loadout from Riot (use after changing things in-game)">⟳ Refresh</button>
 </header>
 
@@ -1065,8 +1090,8 @@ PAGE = r"""<!DOCTYPE html>
 <div id="buddy-modal" class="modal">
   <div class="modal-box">
     <div class="modal-head"><b id="buddy-title">Gun Buddy</b>
-      <input type="text" id="bq" placeholder="Search buddies…">
-      <button class="chip" onclick="closeBuddyModal()">Close</button></div>
+      <input type="text" id="bq">
+      <button class="chip" id="buddy-close" onclick="closeBuddyModal()">Close</button></div>
     <div class="grid" id="buddy-grid"></div>
   </div>
 </div>
@@ -1076,13 +1101,51 @@ PAGE = r"""<!DOCTYPE html>
 let DATA=null, curWeapon=null, curView='weapons', exprSlot=0, buddyQ='';
 const F={weapon:{q:'',tier:'',fav:false,sort:'name'}, spray:{q:'',animated:false}, card:{q:''}, title:{q:''}};
 const TABS=[['weapons','Weapons'],['sprays','Sprays'],['flex','Flex'],['card','Player Card'],['title','Title'],['store','Store'],['presets','Presets']];
+let LANG=(function(){try{return localStorage.getItem('le_lang')||'en';}catch(e){return 'en';}})();
+const I18N={
+ en:{update:'Update',refresh:'⟳ Refresh',hint:'1–5 tabs · / search · R random',
+  tab_weapons:'Weapons',tab_sprays:'Sprays',tab_flex:'Flex',tab_card:'Player Card',tab_title:'Title',tab_store:'Store',tab_presets:'Presets',
+  search_skins:'Search skins…',all_tiers:'All tiers',sort_name:'Sort · Name',sort_rarity:'Sort · Rarity',favorites:'★ Favorites',buddy_btn:'🧸 Buddy',random_btn:'🎲 Random',
+  no_skins_weapon:"You don't own any skins for this weapon.",no_match_filter:'No skins match the filters.',variant:'Variant',level:'Level',no_buddy:'No buddy',edit:'edit',
+  expr_wheel:'Expressions<br>Wheel',slot:'Slot',pick_spray:'pick a spray below →',pick_flex:'pick a flex below →',search_sprays:'Search sprays…',animated:'▶ Animated',no_sprays:'No sprays match the filters.',no_flex:'No owned flex found.',
+  search_cards:'Search cards…',no_cards:'No owned cards found.',no_cards_match:'No cards match the search.',search_titles:'Search titles…',no_titles_match:'No titles match the search.',none_title:'(No Title)',none:'None',
+  daily_store:'Daily Store',resets_in:'resets in',night_market:'Night Market',ends_in:'ends in',featured_bundle:'Featured Bundle',accessory_store:'Accessory Store',kingdom_credits:'Kingdom Credits',store_unavailable:'Store unavailable — could not read your storefront.',
+  new_preset_name:'New preset name…',save_loadout:'＋ Save current loadout',auto_override:'Auto-override',off:'Off',by_map:'By Map',by_agent:'By Agent',apply_now:'Apply now',
+  override_note:'Auto-override is ON. While VALORANT is running, entering agent select / a match auto-applies the preset assigned to that map/agent.',
+  no_presets:'No presets yet. Set up your loadout, type a name, and click "Save current loadout".',map_label:'Map',agent_label:'Agent',
+  gun_buddy:'Gun Buddy',search_buddies:'Search buddies…',close:'Close',no_owned_buddies:'No owned buddies found.',
+  equipped:'Equipped:',spray_set:'Spray set:',flex_set:'Flex set:',buddy_set:'Buddy set:',buddy_removed:'Buddy removed',card_set:'Card set:',title_set:'Title set:',saved_preset:'Saved preset:',applied_preset:'Applied preset',refresh_hint:'(Refresh to see it)',rejected:'Riot rejected the change (HTTP ',req_failed:'Request failed:',no_random:'No skins to randomize',save_failed:'Save failed:'},
+ ja:{update:'更新あり',refresh:'⟳ 更新',hint:'1–5: タブ · /: 検索 · R: ランダム',
+  tab_weapons:'武器',tab_sprays:'スプレー',tab_flex:'Flex',tab_card:'プレイヤーカード',tab_title:'タイトル',tab_store:'ストア',tab_presets:'プリセット',
+  search_skins:'スキンを検索…',all_tiers:'全Tier',sort_name:'並び替え · 名前',sort_rarity:'並び替え · レア度',favorites:'★ お気に入り',buddy_btn:'🧸 バディ',random_btn:'🎲 ランダム',
+  no_skins_weapon:'この武器の所持スキンがありません。',no_match_filter:'条件に一致するスキンがありません。',variant:'バリアント',level:'レベル',no_buddy:'バディなし',edit:'変更',
+  expr_wheel:'表現<br>ウィホイール',slot:'スロット',pick_spray:'下からスプレーを選択 →',pick_flex:'下からFlexを選択 →',search_sprays:'スプレーを検索…',animated:'▶ アニメ',no_sprays:'条件に一致するスプレーがありません。',no_flex:'所持Flexがありません。',
+  search_cards:'カードを検索…',no_cards:'所持カードがありません。',no_cards_match:'検索に一致するカードがありません。',search_titles:'タイトルを検索…',no_titles_match:'検索に一致するタイトルがありません。',none_title:'(タイトルなし)',none:'なし',
+  daily_store:'デイリーストア',resets_in:'更新まで',night_market:'ナイトマーケット',ends_in:'終了まで',featured_bundle:'バンドル',accessory_store:'アクセサリーストア',kingdom_credits:'Kingdom Credits',store_unavailable:'ストアを取得できませんでした。',
+  new_preset_name:'新しいプリセット名…',save_loadout:'＋ 現在のロードアウトを保存',auto_override:'自動オーバーライド',off:'オフ',by_map:'マップ別',by_agent:'エージェント別',apply_now:'適用',
+  override_note:'自動オーバーライドON。VALORANT起動中、エージェントセレクト/試合に入ると、そのマップ/エージェントに割り当てたプリセットを自動適用します。',
+  no_presets:'まだプリセットがありません。ロードアウトを整えて名前を入力し「現在のロードアウトを保存」を押してください。',map_label:'マップ',agent_label:'エージェント',
+  gun_buddy:'ガンバディ',search_buddies:'バディを検索…',close:'閉じる',no_owned_buddies:'所持バディがありません。',
+  equipped:'装備:',spray_set:'スプレー設定:',flex_set:'Flex設定:',buddy_set:'バディ設定:',buddy_removed:'バディを外しました',card_set:'カード設定:',title_set:'タイトル設定:',saved_preset:'プリセット保存:',applied_preset:'プリセット適用',refresh_hint:'（更新で反映）',rejected:'Riotに拒否されました (HTTP ',req_failed:'リクエスト失敗:',no_random:'ランダム対象のスキンがありません',save_failed:'保存に失敗:'}
+};
+function T(k){return (I18N[LANG]&&I18N[LANG][k])||I18N.en[k]||k;}
+function setLang(l){LANG=l;try{localStorage.setItem('le_lang',l);}catch(e){} location.reload();}
 let storeDailyEnd=0, storeNightEnd=0, storeAccEnd=0, lastAutoKey=null;
 
 function toast(msg, kind){const t=document.getElementById('toast');t.textContent=msg;
   t.className='show '+(kind||'');clearTimeout(t._t);t._t=setTimeout(()=>{t.className='';},2200);}
 
+function applyLang(){
+  document.getElementById('hint').innerHTML=T('hint')+' · <b style="color:#67ed4c">build - alpha</b>';
+  document.getElementById('refresh').textContent=T('refresh');
+  const lb=document.getElementById('lang'); lb.textContent=LANG==='en'?'日本語':'English';
+  lb.onclick=()=>setLang(LANG==='en'?'ja':'en');
+  const bq=document.getElementById('bq'); if(bq) bq.placeholder=T('search_buddies');
+  const bc=document.getElementById('buddy-close'); if(bc) bc.textContent=T('close');
+}
 async function load(){
   const r=await fetch('/api/refresh'); DATA=await r.json();
+  applyLang();
   renderTabs();
   buildFilters();
   renderSidebar();
@@ -1092,7 +1155,7 @@ async function load(){
     const ab=document.querySelector('.wbtn.active'); if(ab) ab.scrollIntoView({block:'center'});
   }
   renderSprays(); renderFlex();
-  renderCards(); renderTitles(); renderWallet(); renderStore();
+  renderCards(); renderTitles(); renderWallet(); renderUpdate(); renderStore();
   await loadPresets(); renderPresets();
   setInterval(tickStore,1000);
   setInterval(checkAutoApply,6000);
@@ -1124,16 +1187,21 @@ function renderWallet(){
     +`<span class="cur rp"><b>RP</b>${fmt(w.rp)}</span>`
     +`<span class="cur kc"><b>KC</b>${fmt(w.kc)}</span>`;
 }
+function renderUpdate(){
+  const u=DATA.update||{}, el=document.getElementById('update'); if(!el) return;
+  if(u.available){ el.textContent='⬆ '+T('update')+' '+(u.latest||''); el.href=u.url||'#'; el.style.display=''; }
+  else el.style.display='none';
+}
 function buildFilters(){
   const wf=document.getElementById('weapon-filter');
-  const tierOpts=['<option value="">All tiers</option>'].concat(
+  const tierOpts=[`<option value="">${T('all_tiers')}</option>`].concat(
     (DATA.tiers||[]).map(t=>`<option value="${t.uuid.toLowerCase()}">${t.name}</option>`)).join('');
-  wf.innerHTML=`<input type="text" id="wq" placeholder="Search skins…">
+  wf.innerHTML=`<input type="text" id="wq" placeholder="${T('search_skins')}">
     <select id="wtier">${tierOpts}</select>
-    <select id="wsort"><option value="name">Sort · Name</option><option value="rarity">Sort · Rarity</option></select>
-    <button class="chip" id="wfav">★ Favorites</button>
-    <button class="chip" id="wbuddy">🧸 Buddy</button>
-    <button class="chip" id="wrandom" title="Equip a random owned skin for this weapon">🎲 Random</button>
+    <select id="wsort"><option value="name">${T('sort_name')}</option><option value="rarity">${T('sort_rarity')}</option></select>
+    <button class="chip" id="wfav">${T('favorites')}</button>
+    <button class="chip" id="wbuddy">${T('buddy_btn')}</button>
+    <button class="chip" id="wrandom">${T('random_btn')}</button>
     <span class="count" id="wcount"></span>`;
   document.getElementById('wq').oninput=e=>{F.weapon.q=e.target.value.toLowerCase();renderGrid();};
   document.getElementById('wtier').onchange=e=>{F.weapon.tier=e.target.value;renderGrid();};
@@ -1144,18 +1212,18 @@ function buildFilters(){
   document.getElementById('bq').oninput=e=>{buddyQ=e.target.value.toLowerCase();renderBuddyGrid();};
 
   const sf=document.getElementById('spray-filter');
-  sf.innerHTML=`<input type="text" id="sq" placeholder="Search sprays…">
-    <button class="chip" id="sanim">▶ Animated</button>
+  sf.innerHTML=`<input type="text" id="sq" placeholder="${T('search_sprays')}">
+    <button class="chip" id="sanim">${T('animated')}</button>
     <span class="count" id="scount"></span>`;
   document.getElementById('sq').oninput=e=>{F.spray.q=e.target.value.toLowerCase();renderSprays();};
   document.getElementById('sanim').onclick=e=>{F.spray.animated=!F.spray.animated;e.target.classList.toggle('on',F.spray.animated);renderSprays();};
 
   const cf=document.getElementById('card-filter');
-  cf.innerHTML=`<input type="text" id="cq" placeholder="Search cards…"><span class="count" id="ccount"></span>`;
+  cf.innerHTML=`<input type="text" id="cq" placeholder="${T('search_cards')}"><span class="count" id="ccount"></span>`;
   document.getElementById('cq').oninput=e=>{F.card.q=e.target.value.toLowerCase();renderCards();};
 
   const tf=document.getElementById('title-filter');
-  tf.innerHTML=`<input type="text" id="tq" placeholder="Search titles…"><span class="count" id="tcount"></span>`;
+  tf.innerHTML=`<input type="text" id="tq" placeholder="${T('search_titles')}"><span class="count" id="tcount"></span>`;
   document.getElementById('tq').oninput=e=>{F.title.q=e.target.value.toLowerCase();renderTitles();};
 }
 
@@ -1163,7 +1231,7 @@ function renderTabs(){
   const t=document.getElementById('tabs'); t.innerHTML='';
   TABS.forEach(([id,label])=>{
     const b=document.createElement('button'); b.className='tab'+(id===curView?' active':'');
-    b.textContent=label; b.onclick=()=>setView(id); t.appendChild(b);
+    b.textContent=T('tab_'+id); b.onclick=()=>setView(id); t.appendChild(b);
   });
 }
 function setView(id){
@@ -1213,8 +1281,8 @@ function renderGrid(){
   if(F.weapon.sort==='rarity') list.sort((a,b)=>(b.tierRank-a.tierRank)||a.name.localeCompare(b.name));
   else list.sort((a,b)=>a.name.localeCompare(b.name));
   setCount('wcount', list.length, w.skins.length);
-  if(!w.skins.length){g.innerHTML='<div class="empty">You don\'t own any skins for this weapon.</div>';return;}
-  if(!list.length){g.innerHTML='<div class="empty">No skins match the filters.</div>';return;}
+  if(!w.skins.length){g.innerHTML='<div class="empty">'+T('no_skins_weapon')+'</div>';return;}
+  if(!list.length){g.innerHTML='<div class="empty">'+T('no_match_filter')+'</div>';return;}
   list.forEach(s=>{
     const sel=s.uuid.toLowerCase()===(w.current.skinId||'').toLowerCase();
     const c=document.createElement('div'); c.className='card'+(sel?' sel':'');
@@ -1226,7 +1294,7 @@ function renderGrid(){
   });
 }
 function randomSkin(){
-  const w=weapon(curWeapon); if(!w||!w.skins.length){toast('No skins to randomize','err');return;}
+  const w=weapon(curWeapon); if(!w||!w.skins.length){toast(T('no_random'),'err');return;}
   chooseSkin(w.skins[Math.floor(Math.random()*w.skins.length)]);
 }
 function openBuddyModal(){ if(!weapon(curWeapon))return; buddyQ=''; const bq=document.getElementById('bq'); if(bq)bq.value='';
@@ -1234,14 +1302,14 @@ function openBuddyModal(){ if(!weapon(curWeapon))return; buddyQ=''; const bq=doc
 function closeBuddyModal(){ document.getElementById('buddy-modal').classList.remove('show'); }
 function renderBuddyGrid(){
   const w=weapon(curWeapon), g=document.getElementById('buddy-grid'); g.innerHTML='';
-  document.getElementById('buddy-title').textContent='Gun Buddy — '+(w?w.name:'');
+  document.getElementById('buddy-title').textContent=T('gun_buddy')+' — '+(w?w.name:'');
   const cur=(w&&w.current.charmId||'').toLowerCase();
   const none=document.createElement('div'); none.className='card spr'+(!cur?' sel':'');
-  none.innerHTML='<div class="imgwrap"><span style="color:#5a606e;font-size:26px">∅</span></div><div class="nm">No buddy</div>';
+  none.innerHTML='<div class="imgwrap"><span style="color:#5a606e;font-size:26px">∅</span></div><div class="nm">'+T('no_buddy')+'</div>';
   none.onclick=()=>{equipBuddy(null);closeBuddyModal();}; g.appendChild(none);
   const items=(DATA.buddies&&DATA.buddies.items)||[];
   const list=items.filter(b=>!buddyQ||b.name.toLowerCase().includes(buddyQ));
-  if(!items.length){const e=document.createElement('div');e.className='empty';e.textContent='No owned buddies found.';g.appendChild(e);return;}
+  if(!items.length){const e=document.createElement('div');e.className='empty';e.textContent=T('no_owned_buddies');g.appendChild(e);return;}
   list.forEach(b=>{
     const sel=b.uuid.toLowerCase()===cur; const c=document.createElement('div'); c.className='card spr'+(sel?' sel':'');
     c.innerHTML=`<div class="imgwrap"><img loading="lazy" src="${b.icon||''}" onerror="this.style.visibility='hidden'"></div><div class="nm">${b.name}</div>`;
@@ -1253,26 +1321,26 @@ async function equipBuddy(buddyId){
   const res=await post({type:'buddy',weapon:w.uuid,buddyId:buddyId});
   if(res.ok){ w.current.charmId=buddyId||null; renderPreview();
     const b=buddyId&&(DATA.buddies.items||[]).find(x=>x.uuid===buddyId);
-    toast(buddyId?('Buddy set: '+(b?b.name:'')):'Buddy removed','ok'); }
-  else toast('Riot rejected the change (HTTP '+res.status+')','err');
+    toast(buddyId?(T('buddy_set')+' '+(b?b.name:'')):T('buddy_removed'),'ok'); }
+  else toast(T('rejected')+res.status+')','err');
 }
 function renderPreview(){
   const w=weapon(curWeapon),p=document.getElementById('preview'),s=skinOf(w,w.current.skinId);
   const chroma=s?(s.chromas.find(c=>c.uuid.toLowerCase()===(w.current.chromaId||'').toLowerCase())||s.chromas[0]):null;
   const img=chroma?chroma.render:(s?s.icon:w.currentSkinIcon); let v='';
   if(s){
-    if(s.chromas.length>1){v+='<div class="vrow"><span class="vlbl">Variant</span>'+s.chromas.map(c=>{
+    if(s.chromas.length>1){v+='<div class="vrow"><span class="vlbl">'+T('variant')+'</span>'+s.chromas.map(c=>{
       const sel=c.uuid.toLowerCase()===(w.current.chromaId||'').toLowerCase();
       const bg=c.swatch?`background-image:url('${c.swatch}')`:'background:#2a2e39';
       return `<button class="chroma${sel?' sel':''}" style="${bg}" ${c.owned?'':'disabled'} title="${c.name}" onclick="setChroma('${c.uuid}')"></button>`;}).join('')+'</div>';}
-    if(s.levels.length>1){v+='<div class="vrow"><span class="vlbl">Level</span>'+s.levels.map((l,i)=>{
+    if(s.levels.length>1){v+='<div class="vrow"><span class="vlbl">'+T('level')+'</span>'+s.levels.map((l,i)=>{
       const sel=l.uuid.toLowerCase()===(w.current.levelId||'').toLowerCase();
       return `<button class="lvl${sel?' sel':''}" ${l.owned?'':'disabled'} onclick="setLevel('${l.uuid}')">Lv.${i+1}</button>`;}).join('')+'</div>';}
   }
   p.style.setProperty('--tc', (s&&s.tierColor)||'#2c313d');
   const pill=(s&&s.tierName)?`<div class="pt">${s.tierIcon?`<img loading="lazy" src="${s.tierIcon}">`:''}${s.tierName}${s.favorite?' · ★':''}</div>`:'';
   const cb=w.current.charmId?(DATA.buddies.items||[]).find(b=>b.uuid.toLowerCase()===w.current.charmId.toLowerCase()):null;
-  const buddy=`<div class="pt buddy" onclick="openBuddyModal()">${cb?`<img loading="lazy" src="${cb.icon}">${cb.name}`:'🧸 No buddy'}<span class="edit">edit</span></div>`;
+  const buddy=`<div class="pt buddy" onclick="openBuddyModal()">${cb?`<img loading="lazy" src="${cb.icon}">${cb.name}`:'🧸 '+T('no_buddy')}<span class="edit">${T('edit')}</span></div>`;
   p.innerHTML=`<img loading="lazy" src="${img||''}" onerror="this.style.visibility='hidden'">
     <div class="meta"><div class="pw">${w.name}</div><div class="ps">${s?s.name:(w.currentSkinName||'Default')}</div>${pill}${buddy}</div>
     <div class="variants">${v}</div>`;
@@ -1288,12 +1356,12 @@ async function applySkin(w,skinId,levelId,chromaId){
     w.currentSkinIcon=sk?sk.icon:w.currentSkinIcon;w.currentSkinName=sk?sk.name:w.currentSkinName;
     const ws=document.getElementById('ws-'+w.uuid);if(ws)ws.textContent=w.currentSkinName;
     const im=document.querySelector(`.wbtn[data-w="${w.uuid}"] img`);if(im&&sk){im.src=sk.icon||'';im.style.visibility='visible';}
-    renderGrid();renderPreview();toast('Equipped: '+(sk?sk.name:'skin'),'ok');}
-  else toast('Riot rejected the change (HTTP '+res.status+')','err');
+    renderGrid();renderPreview();toast(T('equipped')+' '+(sk?sk.name:'skin'),'ok');}
+  else toast(T('rejected')+res.status+')','err');
 }
 
 function placeWheel(el, slots, selIdx, onSel){
-  el.innerHTML='<div class="hub">Expressions<br>Wheel</div>'; const n=slots.length||1, R=95;
+  el.innerHTML='<div class="hub">'+T('expr_wheel')+'</div>'; const n=slots.length||1, R=95;
   slots.forEach((s,i)=>{
     const ang=(-90+i*360/n)*Math.PI/180, x=130+R*Math.cos(ang), y=130+R*Math.sin(ang);
     const b=document.createElement('button'); b.className='slot'+(i===selIdx?' sel':'');
@@ -1306,7 +1374,7 @@ function exprSlots(){return DATA.expressions.slots;}
 function selectExprSlot(i){exprSlot=i;renderSprays();renderFlex();}
 function exprCap(kind){
   const s=exprSlots()[exprSlot];
-  return s?`<b>Slot ${exprSlot+1}</b>${s.name||'Empty'}<br><span style="font-size:11px">pick a ${kind} below →</span>`:'';
+  return s?`<b>${T('slot')} ${exprSlot+1}</b>${s.name||'Empty'}<br><span style="font-size:11px">${T(kind==='spray'?'pick_spray':'pick_flex')}</span>`:'';
 }
 
 function renderSprays(){
@@ -1320,7 +1388,7 @@ function renderSprays(){
     return true;
   });
   setCount('scount', list.length, DATA.sprays.items.length);
-  if(!list.length){g.innerHTML='<div class="empty">No sprays match the filters.</div>';return;}
+  if(!list.length){g.innerHTML='<div class="empty">'+T('no_sprays')+'</div>';return;}
   list.forEach(s=>{
     const sel=s.uuid.toLowerCase()===curId; const c=document.createElement('div'); c.className='card spr'+(sel?' sel':'');
     const anim=s.animated?'<div class="fav" style="color:var(--muted)">▶</div>':'';
@@ -1334,7 +1402,7 @@ function renderFlex(){
   document.getElementById('flex-note').innerHTML='';
   const g=document.getElementById('flex-grid'); g.innerHTML='';
   const cur=exprSlots()[exprSlot], curId=(cur&&cur.kind==='flex'&&cur.assetId||'').toLowerCase();
-  if(!DATA.flex.items.length){g.innerHTML='<div class="empty">No owned flex found.</div>';return;}
+  if(!DATA.flex.items.length){g.innerHTML='<div class="empty">'+T('no_flex')+'</div>';return;}
   DATA.flex.items.forEach(f=>{
     const sel=f.uuid.toLowerCase()===curId; const c=document.createElement('div'); c.className='card'+(sel?' sel':'');
     c.innerHTML=`<div class="imgwrap"><img loading="lazy" src="${f.icon||''}" onerror="this.style.visibility='hidden'"></div><div class="nm">${f.name}</div>`;
@@ -1346,16 +1414,16 @@ async function equipExpr(kind, item){
   const body={type:kind, slotIndex:exprSlot}; body[kind==='spray'?'sprayId':'flexId']=item.uuid;
   const res=await post(body);
   if(res.ok){slot.kind=kind;slot.assetId=item.uuid;slot.icon=item.icon;slot.name=item.name;
-    renderSprays();renderFlex();toast((kind==='spray'?'Spray':'Flex')+' set: '+item.name,'ok');}
-  else toast('Riot rejected the change (HTTP '+res.status+')','err');
+    renderSprays();renderFlex();toast(T(kind==='spray'?'spray_set':'flex_set')+' '+item.name,'ok');}
+  else toast(T('rejected')+res.status+')','err');
 }
 
 function renderCards(){
   const g=document.getElementById('card-grid'); g.innerHTML='';
   const list=DATA.cards.items.filter(c=>!F.card.q || c.name.toLowerCase().includes(F.card.q));
   setCount('ccount', list.length, DATA.cards.items.length);
-  if(!DATA.cards.items.length){g.innerHTML='<div class="empty">No owned cards found.</div>';return;}
-  if(!list.length){g.innerHTML='<div class="empty">No cards match the search.</div>';return;}
+  if(!DATA.cards.items.length){g.innerHTML='<div class="empty">'+T('no_cards')+'</div>';return;}
+  if(!list.length){g.innerHTML='<div class="empty">'+T('no_cards_match')+'</div>';return;}
   list.forEach(c=>{
     const sel=c.uuid.toLowerCase()===(DATA.cards.current||'').toLowerCase();
     const el=document.createElement('div'); el.className='card pc'+(sel?' sel':'');
@@ -1365,51 +1433,51 @@ function renderCards(){
 }
 async function equipCard(c){
   const res=await post({type:'card',cardId:c.uuid});
-  if(res.ok){DATA.cards.current=c.uuid;renderCards();toast('Card set: '+c.name,'ok');}
-  else toast('Riot rejected the change (HTTP '+res.status+')','err');
+  if(res.ok){DATA.cards.current=c.uuid;renderCards();toast(T('card_set')+' '+c.name,'ok');}
+  else toast(T('rejected')+res.status+')','err');
 }
 function renderTitles(){
   const l=document.getElementById('title-list'); l.innerHTML='';
   const q=F.title.q;
   const list=DATA.titles.items.filter(t=>!q || (t.text||'').toLowerCase().includes(q) || (t.name||'').toLowerCase().includes(q));
   setCount('tcount', list.length, DATA.titles.items.length);
-  if(!list.length){l.innerHTML='<div class="empty">No titles match the search.</div>';return;}
+  if(!list.length){l.innerHTML='<div class="empty">'+T('no_titles_match')+'</div>';return;}
   list.forEach(t=>{
     const sel=(t.uuid||'').toLowerCase()===(DATA.titles.current||'').toLowerCase();
     const el=document.createElement('div'); el.className='trow'+(sel?' sel':'');
-    el.innerHTML=`<div class="tt">${t.text}</div><div class="tn">${t.name}</div>`;
+    el.innerHTML=`<div class="tt">${t.uuid?t.text:T('none_title')}</div><div class="tn">${t.uuid?t.name:T('none')}</div>`;
     el.onclick=()=>equipTitle(t); l.appendChild(el);
   });
 }
 async function equipTitle(t){
   const res=await post({type:'title',titleId:t.uuid});
-  if(res.ok){DATA.titles.current=t.uuid;renderTitles();toast('Title set: '+t.text,'ok');}
-  else toast('Riot rejected the change (HTTP '+res.status+')','err');
+  if(res.ok){DATA.titles.current=t.uuid;renderTitles();toast(T('title_set')+' '+t.text,'ok');}
+  else toast(T('rejected')+res.status+')','err');
 }
 
 function fmtDur(sec){sec=Math.max(0,Math.floor(sec));const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return (h?h+'h ':'')+m+'m '+s+'s';}
 function renderStore(){
   const wrap=document.getElementById('store-wrap'), st=DATA.store||{};
-  if(!st.available){wrap.innerHTML='<div class="empty" style="margin-top:60px">Store unavailable — could not read your storefront.</div>';return;}
+  if(!st.available){wrap.innerHTML='<div class="empty" style="margin-top:60px">'+T('store_unavailable')+'</div>';return;}
   storeDailyEnd=Date.now()+(st.remainingSeconds||0)*1000;
   storeNightEnd=Date.now()+(st.nightSeconds||0)*1000;
-  let html='<div class="store-head"><div><div class="sh-title">Daily Store</div><div class="sh-sub">resets in <span id="daily-timer"></span></div></div></div>';
+  let html='<div class="store-head"><div><div class="sh-title">'+T('daily_store')+'</div><div class="sh-sub">'+T('resets_in')+' <span id="daily-timer"></span></div></div></div>';
   html+='<div class="grid store-grid">'+(st.daily||[]).map(o=>storeCard(o,false)).join('')+'</div>';
   if(st.night&&st.night.length){
-    html+='<div class="store-head night"><div><div class="sh-title">Night Market</div><div class="sh-sub">ends in <span id="night-timer"></span></div></div></div>';
+    html+='<div class="store-head night"><div><div class="sh-title">'+T('night_market')+'</div><div class="sh-sub">'+T('ends_in')+' <span id="night-timer"></span></div></div></div>';
     html+='<div class="grid store-grid">'+st.night.map(o=>storeCard(o,true)).join('')+'</div>';
   }
   (st.bundles||[]).forEach(b=>{
     const end=Date.now()+(b.seconds||0)*1000;
-    html+=`<div class="store-head bundle"><div><div class="sh-title">Featured Bundle · ${b.name}</div>
-      <div class="sh-sub">VP ${(b.cost==null?'—':b.cost.toLocaleString())} · ends in <span class="bundle-timer" data-end="${end}"></span></div></div></div>`;
+    html+=`<div class="store-head bundle"><div><div class="sh-title">${T('featured_bundle')} · ${b.name}</div>
+      <div class="sh-sub">VP ${(b.cost==null?'—':b.cost.toLocaleString())} · ${T('ends_in')} <span class="bundle-timer" data-end="${end}"></span></div></div></div>`;
     if(b.icon) html+=`<div class="bundle-banner"><img loading="lazy" src="${b.icon}" onerror="this.style.display='none'"></div>`;
     html+='<div class="grid store-grid mini">'+(b.items||[]).map(it=>
       `<div class="card store"><div class="imgwrap"><img loading="lazy" src="${it.icon||''}" onerror="this.style.visibility='hidden'"></div><div class="nm">${it.name}</div></div>`).join('')+'</div>';
   });
   if(st.accessory&&st.accessory.length){
     storeAccEnd=Date.now()+(st.accessorySeconds||0)*1000;
-    html+='<div class="store-head"><div><div class="sh-title">Accessory Store</div><div class="sh-sub">Kingdom Credits · ends in <span id="acc-timer"></span></div></div></div>';
+    html+='<div class="store-head"><div><div class="sh-title">'+T('accessory_store')+'</div><div class="sh-sub">'+T('kingdom_credits')+' · '+T('ends_in')+' <span id="acc-timer"></span></div></div></div>';
     html+='<div class="grid store-grid">'+st.accessory.map(o=>
       `<div class="card spr"><div class="imgwrap">${o.icon?`<img loading="lazy" src="${o.icon}" onerror="this.style.visibility='hidden'">`:`<span style="color:var(--muted);font-size:12px;text-align:center;padding:8px">${o.name}</span>`}</div><div class="nm">${o.name}</div><div class="scost"><span class="vp" style="color:#7fd0c4">KC</span> <b>${o.cost==null?'—':o.cost.toLocaleString()}</b></div></div>`).join('')+'</div>';
   }
@@ -1454,22 +1522,22 @@ function renderPresets(){
   const wrap=document.getElementById('presets-wrap'); const ps=getPresets(); const ov=getOverride();
   const opt=(list,sel)=>['<option value="">—</option>'].concat((list||[]).map(x=>`<option value="${x.uuid}" ${x.uuid===sel?'selected':''}>${x.name}</option>`)).join('');
   let html=`<div class="filterbar">
-    <input type="text" id="preset-name" placeholder="New preset name…">
-    <button class="chip" id="preset-save">＋ Save current loadout</button>
-    <span style="margin-left:auto;color:var(--muted);font-size:12px">Auto-override</span>
-    <button class="chip ${ov==='off'?'on':''}" onclick="setOverride('off')">Off</button>
-    <button class="chip ${ov==='map'?'on':''}" onclick="setOverride('map')">By Map</button>
-    <button class="chip ${ov==='agent'?'on':''}" onclick="setOverride('agent')">By Agent</button>
+    <input type="text" id="preset-name" placeholder="${T('new_preset_name')}">
+    <button class="chip" id="preset-save">${T('save_loadout')}</button>
+    <span style="margin-left:auto;color:var(--muted);font-size:12px">${T('auto_override')}</span>
+    <button class="chip ${ov==='off'?'on':''}" onclick="setOverride('off')">${T('off')}</button>
+    <button class="chip ${ov==='map'?'on':''}" onclick="setOverride('map')">${T('by_map')}</button>
+    <button class="chip ${ov==='agent'?'on':''}" onclick="setOverride('agent')">${T('by_agent')}</button>
   </div>`;
-  if(ov!=='off') html+=`<div class="note">Auto-override is ON (${ov}). While VALORANT is running, entering agent select / a match will auto-apply the preset assigned to that ${ov}. <span id="gs-now" style="color:var(--muted)"></span></div>`;
-  if(!ps.length){ html+='<div class="empty" style="margin-top:30px">No presets yet. Set up your loadout, type a name, and click “Save current loadout”.</div>'; }
+  if(ov!=='off') html+=`<div class="note">${T('override_note')} <span id="gs-now" style="color:var(--muted)"></span></div>`;
+  if(!ps.length){ html+='<div class="empty" style="margin-top:30px">'+T('no_presets')+'</div>'; }
   else {
     html+='<div class="presets-list">'+ps.map(p=>`
       <div class="preset-row">
         <div class="pname">${p.name}</div>
-        <label class="psel">Map <select onchange="assignPreset('${p.id}','map',this.value)">${opt(DATA.maps,p.map||'')}</select></label>
-        <label class="psel">Agent <select onchange="assignPreset('${p.id}','agent',this.value)">${opt(DATA.agents,p.agent||'')}</select></label>
-        <button class="chip" onclick="applyPresetById('${p.id}')">Apply now</button>
+        <label class="psel">${T('map_label')} <select onchange="assignPreset('${p.id}','map',this.value)">${opt(DATA.maps,p.map||'')}</select></label>
+        <label class="psel">${T('agent_label')} <select onchange="assignPreset('${p.id}','agent',this.value)">${opt(DATA.agents,p.agent||'')}</select></label>
+        <button class="chip" onclick="applyPresetById('${p.id}')">${T('apply_now')}</button>
         <button class="chip" onclick="deletePreset('${p.id}')" title="Delete">✕</button>
       </div>`).join('')+'</div>';
   }
@@ -1481,15 +1549,15 @@ async function savePreset(){
   try{
     const r=await fetch('/api/loadout-raw'); const lo=await r.json();
     getPresets().push({id:'p'+Date.now(), name:nm, loadout:lo, map:'', agent:''});
-    await savePresets(); renderPresets(); toast('Saved preset: '+nm,'ok');
-  }catch(e){ toast('Save failed: '+e,'err'); }
+    await savePresets(); renderPresets(); toast(T('saved_preset')+' '+nm,'ok');
+  }catch(e){ toast(T('save_failed')+' '+e,'err'); }
 }
 function deletePreset(id){ PRESETS.presets=getPresets().filter(p=>p.id!==id); savePresets(); renderPresets(); }
 function assignPreset(id,field,val){ const p=getPresets().find(x=>x.id===id); if(p){p[field]=val; savePresets();} }
 async function applyPresetById(id){ const p=getPresets().find(x=>x.id===id); if(p) await applyPresetLoadout(p.loadout, p.name); }
 async function applyPresetLoadout(loadout, name){
   const res=await post2('/api/apply-preset',{loadout});
-  if(res&&res.ok) toast('Applied preset'+(name?': '+name:'')+' (Refresh to see it)','ok');
+  if(res&&res.ok) toast(T('applied_preset')+(name?': '+name:'')+' '+T('refresh_hint'),'ok');
   else toast('Apply failed (HTTP '+((res&&res.status)||0)+')','err');
 }
 async function post2(url,body){ try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return await r.json();}catch(e){return {ok:false,status:0};} }

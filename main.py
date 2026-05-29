@@ -53,7 +53,7 @@ def main():
             input("press enter to exit...\n")
             return
         from src.loadout_gui import LoadoutGui
-        LoadoutGui(log, req).serve()
+        LoadoutGui(log, req, version).serve()
     except KeyboardInterrupt:
         pass
     except Exception:
