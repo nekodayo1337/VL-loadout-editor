@@ -63,6 +63,12 @@ Keep the console window open while using the editor; press `Ctrl+C` there to clo
 
 ## Notes
 
+- **System tray:** the app runs in the tray with no console window. The HTTP server keeps
+  running in the background even if you close the browser tab.
+  - **Reopen the editor:** double-click (or left-click) the tray icon — or just run the app
+    again; it reopens the existing instance instead of starting a second one.
+  - **Quit:** right-click the tray icon → **Quit**. (Closing the browser tab does *not* quit it.)
+  - First launch shows a tray balloon telling you it's running in the tray.
 - Changes are saved to Riot's servers immediately, but VALORANT only shows them the
   next time it loads your loadout (re-open the Collection, start a match, or restart
   the client).
@@ -145,6 +151,12 @@ Use of this software is done at your own risk.
 
 ## 注意
 
+- **タスクトレイ常駐：** コンソール窓は出ず、アプリはトレイに常駐します。ブラウザのタブを閉じても、
+  HTTPサーバーはバックグラウンドで動き続けます。
+  - **再表示：** トレイアイコンをダブルクリック（または左クリック）。もしくはアプリをもう一度起動すれば、
+    2個目を立ち上げず既存インスタンスのタブを開きます。
+  - **終了：** トレイアイコンを右クリック →「**Quit**」。（タブを閉じただけでは終了しません）
+  - 初回起動時に「トレイで動作中」のバルーン通知が出ます。
 - 変更は Riot のサーバーに即保存されますが、VALORANT 側の表示は次にロードアウトを
   読み込んだとき（コレクションを開き直す / 試合に入る / クライアント再起動）に反映されます。
 - マップ/エージェントの自動適用は **VALORANT 起動中のみ**動作します（現在のマップ/エージェントは
