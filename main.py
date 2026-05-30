@@ -11,7 +11,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from src.logs import Logging
 from src.requestsV import Requests
 
-version = "alpha"
+version = "0.1.0"
 
 HAS_CONSOLE = sys.stdout is not None
 

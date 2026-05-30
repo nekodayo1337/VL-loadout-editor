@@ -193,6 +193,7 @@ class LoadoutGui:
             "maps": maps_list,
             "agents": agents_list,
             "update": self._check_update(),
+            "version": self.version,
         }
         return self.payload
 
@@ -1232,7 +1233,7 @@ function toast(msg, kind){const t=document.getElementById('toast');t.textContent
   t.className='show '+(kind||'');clearTimeout(t._t);t._t=setTimeout(()=>{t.className='';},2200);}
 
 function applyLang(){
-  document.getElementById('hint').innerHTML=T('hint')+' · <b style="color:#67ed4c">build - alpha</b>';
+  document.getElementById('hint').innerHTML=T('hint')+' · <b style="color:#67ed4c">v'+((DATA&&DATA.version)||'')+'</b>';
   document.getElementById('refresh').textContent=T('refresh');
   const lb=document.getElementById('lang'); lb.textContent=LANG==='en'?'日本語':'English';
   lb.onclick=()=>setLang(LANG==='en'?'ja':'en');
